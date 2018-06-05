@@ -1,0 +1,53 @@
+/*
+Adapted from the following stack overflow answers:
+printing binary: https://stackoverflow.com/questions/111928/is-there-a-printf-converter-to-print-in-binary-format
+*/
+
+#include <stdlib.h>
+
+void printBits(const size_t size, const void* data, int incr){
+	int i, j; 
+	char* byte = data;
+	char p_byte;
+	int do_incr = 0;
+
+	//outer loop grabs each byte 
+	for(i = size-1; i >= 0; i--){
+		//inner loop grabs each bit
+		for(j = 7; j >= 0; j--){
+			p_byte = (byte[i] >> j) & 1; //right shift to isolate the most significant bits
+										  	 //and 1 to isolate the least significant bit
+			printf("%u", p_byte);
+			if(do_incr == incr - 1){
+				printf(" ");
+				do_incr = 0;
+			}
+			else{
+				do_incr++;
+			}
+
+		}
+	}
+	printf("\n");
+}
+
+void main(){
+	int test = 0xffffffff;
+	int test2 = 0xffffffff;
+	int tmp = test2;
+
+	int ls1 = test << 1;
+	int mask_8 = test | (1 << 2);
+	int nums = 0x01020304;
+
+	int* addr = &test;
+	int func_reg_offset = 3;
+	tmp = tmp & ~(1 << func_reg_offset*3);
+	tmp = tmp & ~(1 << func_reg_offset*3 + 1);
+	tmp = tmp & ~(1 << func_reg_offset*3 + 2);
+	*(&test2) = tmp;	
+	printf("%x\n", nums);
+	printBits(sizeof(nums), &nums, 4);
+	printBits(sizeof(test), &test, 4);
+	printBits(sizeof(mask_8), &mask_8, 4);
+}

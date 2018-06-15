@@ -14,6 +14,10 @@
 #undef VERIFY_OCTAL_PERMISSIONS
 #define VERIFY_OCTAL_PERMISSIONS(_mode) (_mode)
 
+#define CLEAR_MASK ~0b111 
+#define SET_OUTPUT(reg, off) (reg & (CLEAR_MASK << off)) | (1 << off)
+#define SET_INPUT(reg, off) (reg & (CLEAR_MASK << off))
+
 MODULE_LICENSE("GPL");
 
 static const char name[5] = "gpio\0";
@@ -25,8 +29,11 @@ static int gpio_mode;	  //0 or 1 indicating input or output
 static int gpio_value;	  //current value gpio pin
 static int retval; 		//sysfs_create_group return val
 
-//set current gpio_pin
-static ssize_t scan_pin(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count){
+static void __iomem *gpio;
+
+
+//read and set current gpio pin
+static ssize_t set_pin(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count){
 	sscanf(buf, "%d", &gpio_pin);
 	printk(KERN_INFO "gpio_pin set to: %d\n", gpio_pin);
 		
@@ -35,29 +42,50 @@ static ssize_t scan_pin(struct kobject *kobj, struct kobj_attribute *attr, const
 }
 
 static ssize_t read_pin(struct kobject *kobj, struct kobj_attribute *attr, char *buf){
-	return snprintf(buf, sizeof(buf), "%d\n", gpio_pin);	
+	return snprintf(buf, sizeof(gpio_pin), "%d\n", gpio_pin);	
 }
+
+//read and set output mode
+static ssize_t set_mode(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count){
+	int gpfunsel_line = gpio_pin / 10;
+	int gpfunsel_off = gpio_pin % 10 * 3;
+	int32_t GPFUNSEL;
+
+	sscanf(buf, "%d", &gpio_mode);
+	
+	GPFUNSEL = (uint32_t)ioread32((uint32_t *)gpio + gpfunsel_line); 
+	GPFUNSEL = (gpio_mode) ? SET_OUTPUT(GPFUNSEL, gpfunsel_off) : SET_INPUT(GPFUNSEL, gpfunsel_off);
+	
+	iowrite32(GPFUNSEL, gpio + gpfunsel_line);
+
+	return sizeof(gpio_mode);
+}
+
+static ssize_t read_mode(struct kobject *kobj, struct kobj_attribute *attr, char *buf){
+	return snprintf(buf, sizeof(gpio_mode), "%d\n", gpio_mode);	
+}
+
 
 //register kobject attribute using __ATTR macro
 //name and access mode
-//registers read(show) and set(write) callbacks
-static struct kobj_attribute gpio_attr = __ATTR(gpio_pin, 0600, read_pin, scan_pin);
-
-//initialize list of attributes used to create attribute group
-//__ATTRIBUTE_GROUPS(gpio_attr);
+//registers read(show) and set(write) callbacks 
+static struct kobj_attribute gpio_pin_attr = __ATTR(gpio_pin, 0600, read_pin, set_pin);
+static struct kobj_attribute gpio_mode_attr = __ATTR(gpio_mode, 0600, read_mode, set_mode);
 
 static struct attribute *gpio_attrs[] = {
-	&gpio_attr.attr,
+	&gpio_pin_attr.attr,
+	&gpio_mode_attr.attr,
 	NULL,
 };
 
+// #define ATTRIBUTE_GROUPS(_name)                 \
+// static const struct attribute_group _name##_group = {       \
+//     .attrs = _name##_attrs,                 \
+// };                              \
+
+// __ATTRIBUTE_GROUPS(_name)
 
 ATTRIBUTE_GROUPS(gpio);
-
-//static struct attribute_group attr_group = {
-//	//.name = name, leaving name unitialized will not create another directory after /sys/gpio_driver
-//	.attrs = gpio_attrs,
-//};
 
 static struct kobject* gpio_kobj;
 
@@ -73,7 +101,13 @@ static int __init init_driver(void){
 		kobject_put(gpio_kobj);
 		return retval;
 	}
-	gpio_pin = 69;
+	gpio = ioremap(GPIO_BASE, 4096);
+	if(gpio == NULL){
+		printk(KERN_ALERT "IORemap Failed\n");
+	}
+
+	
+	gpio_pin = 0;
 	printk(KERN_ALERT "Initialization finished, gpio_pin: %d\n", gpio_pin);	
 	return 0;
 }
